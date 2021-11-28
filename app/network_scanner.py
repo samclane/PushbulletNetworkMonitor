@@ -2,9 +2,10 @@ import asyncio
 import subprocess
 import logging
 from abc import ABC, abstractmethod
+from typing import Callable
 
 logger = logging.getLogger('network_scanner')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -97,23 +98,23 @@ class NetworkScanner:
     async def on_network(self):
         return await self.strategy.on_network()
 
-    async def monitor(self, cb):
+    async def monitor(self, cb: Callable, interval=1):
         while True:
             await self.scan_network()
             if await self.on_network():
-                print(f"{self.fullname} is on the network")
+                logger.info(f"{self.fullname} is on the network")
                 if cb:
                     await cb(ip=self.ip, mac=self.mac, hostname=self.hostname)
             else:
-                print(f"{self.ip} is not on the network")
+                logger.info(f"{self.ip} is not on the network")
                 if cb:
                     await cb(ip=None, mac=None, hostname=None)
-            await asyncio.sleep(1)
+            await asyncio.sleep(interval)
 
 
 if __name__ == "__main__":
     # print(asyncio.run(scan_network()))
     ns = NetworkScanner(ip='192.168.0.x', hostname='DIETPI', strategy=HostnameScanStrategy)
     async def report(ip=None, mac=None, hostname=None):
-        print(f"cb: {ip} {mac} {hostname}")
-    print(asyncio.run(ns.monitor(cb=report)))
+        logger.info(f"cb: {ip} {mac} {hostname}")
+    logger.info(asyncio.run(ns.monitor(cb=report)))
