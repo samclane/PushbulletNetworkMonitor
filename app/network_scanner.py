@@ -1,8 +1,10 @@
+from __future__ import annotations
+from _typeshed import NoneType
 import asyncio
 import subprocess
 import logging
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Type
 
 logger = logging.getLogger('network_scanner')
 logger.setLevel(logging.INFO)
@@ -14,7 +16,7 @@ logger.addHandler(ch)
 
 
 class ScanStrategy(ABC):
-    def __init__(self, interface):
+    def __init__(self, interface: NetworkScanner):
         self.interface = interface
     
     @abstractmethod
@@ -23,41 +25,45 @@ class ScanStrategy(ABC):
 
 
 class IpScanStrategy(ScanStrategy):
-    def __init__(self, interface, ip=None):
+    def __init__(self, interface: NetworkScanner, ip: Optional[str] = None):
         super().__init__(interface)
         self.interface = interface
         self.ip = ip or self.interface.ip
     
-    async def on_network(self):
+    async def on_network(self) -> bool:
+        if not self.ip:
+            return False
         arpa = subprocess.check_output(("arp", "-a")).decode("ascii")
         return self.ip in arpa
 
 
 class MacScanStrategy(ScanStrategy):
-    def __init__(self, interface, mac=None):
+    def __init__(self, interface: NetworkScanner, mac: Optional[str] = None):
         super().__init__(interface)
         self.interface = interface
         self.mac = mac or self.interface.mac
     
-    async def on_network(self):
+    async def on_network(self) -> bool:
+        if not self.mac:
+            return False
         arpa = subprocess.check_output(("arp", "-a")).decode("ascii")
         return self.mac in arpa
 
 
 class HostnameScanStrategy(IpScanStrategy):
-    def __init__(self, interface, hostname=None):
+    def __init__(self, interface: NetworkScanner, hostname: Optional[str] = None):
         super().__init__(interface, ip=interface.ip)
         self.prefix = self.interface.prefix
         self.hostname = hostname or self.interface.hostname
     
-    async def on_network(self):
+    async def on_network(self) -> bool:
         tasks = [asyncio.create_task(self.interface.ping(self.prefix + str(i), get_hostname=True)) for i in range(255)]
         ping_output = await asyncio.gather(*tasks)
         return any(self.hostname in x for x in ping_output)
 
 
 class NetworkScanner:
-    def __init__(self, ip=None, mac=None, hostname=None, strategy=IpScanStrategy):
+    def __init__(self, ip: Optional[str] = None, mac: Optional[str] = None, hostname: Optional[str] = None, strategy: Type[ScanStrategy] = IpScanStrategy):
         self.ip = ip
         self._mac = mac
         self.hostname = hostname
@@ -65,20 +71,23 @@ class NetworkScanner:
         self.strategy = strategy(self)
 
     @property
-    def mac(self):
+    def mac(self) -> Optional[str]:
         if not self._mac:
             return None
         return self._mac.lower().replace(':','-')
 
     @property
-    def prefix(self):
-        return '.'.join(self.ip.split('.')[0:3]) + '.'
+    def prefix(self) -> str:
+        if self.ip:
+            return '.'.join(self.ip.split('.')[0:3]) + '.'
+        else:
+            return ''
 
     @property
-    def fullname(self):
+    def fullname(self) -> str:
         return "\t".join(map(str, [self.ip, self.mac, self.hostname]))
 
-    async def ping(self, ip, get_hostname=False):
+    async def ping(self, ip: str, get_hostname: Optional[bool] = False) -> Optional[str]:
         proc = await asyncio.create_subprocess_shell(' '.join(['ping', '-n', '1','-w','100','-a' if get_hostname else '', ip]), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await proc.communicate()
         if stderr:
@@ -87,18 +96,20 @@ class NetworkScanner:
         elif stdout:
             logger.debug(stdout.decode())
             return stdout.decode()
+        else:
+            return None
 
-    async def scan_network(self):
+    async def scan_network(self) -> List[str]:
         """Currently just returns nasty network output. Useful for string-matching though. """
         tasks = [asyncio.create_task(self.ping(self.prefix + str(i))) for i in range(255)]
         await asyncio.gather(*tasks)
         arpa = subprocess.check_output(("arp", "-a")).decode("ascii")
         return [x for x in arpa.split('\n') if self.prefix in x]
 
-    async def on_network(self):
+    async def on_network(self) -> bool:
         return await self.strategy.on_network()
 
-    async def monitor(self, cb: Callable, interval=1, cb_on_change_only=False):
+    async def monitor(self, cb: Callable, interval: float = 1., cb_on_change_only: Optional[bool] = False):
         state_is_connected: Optional[bool] = None
         while True:
             await self.scan_network()

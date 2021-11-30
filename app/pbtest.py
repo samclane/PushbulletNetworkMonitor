@@ -1,4 +1,4 @@
-import pushbullet
+import pushbullet # type: ignore
 import argparse
 import asyncio
 import os
