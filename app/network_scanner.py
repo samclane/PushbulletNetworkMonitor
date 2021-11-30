@@ -98,18 +98,18 @@ class NetworkScanner:
     async def on_network(self):
         return await self.strategy.on_network()
 
-    async def monitor(self, cb: Callable, interval=1):
+    async def monitor(self, cb: Callable, interval=1, cb_on_change_only=False):
         state_is_connected: Optional[bool] = None
         while True:
             await self.scan_network()
             if await self.on_network():
                 logger.info(f"{self.fullname} is on the network")
-                if cb and not state_is_connected:
+                if cb and (not state_is_connected or not cb_on_change_only):
                     await cb(ip=self.ip, mac=self.mac, hostname=self.hostname)
                 state_is_connected = True
             else:
                 logger.info(f"{self.ip} is not on the network")
-                if cb and state_is_connected:
+                if cb and (state_is_connected or not cb_on_change_only):
                     await cb(ip=None, mac=None, hostname=None)
                 state_is_connected = False
             await asyncio.sleep(interval)
