@@ -2,7 +2,7 @@ import asyncio
 import subprocess
 import logging
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Optional
 
 logger = logging.getLogger('network_scanner')
 logger.setLevel(logging.INFO)
@@ -99,16 +99,19 @@ class NetworkScanner:
         return await self.strategy.on_network()
 
     async def monitor(self, cb: Callable, interval=1):
+        state_is_connected: Optional[bool] = None
         while True:
             await self.scan_network()
             if await self.on_network():
                 logger.info(f"{self.fullname} is on the network")
-                if cb:
+                if cb and not state_is_connected:
                     await cb(ip=self.ip, mac=self.mac, hostname=self.hostname)
+                state_is_connected = True
             else:
                 logger.info(f"{self.ip} is not on the network")
-                if cb:
+                if cb and state_is_connected:
                     await cb(ip=None, mac=None, hostname=None)
+                state_is_connected = False
             await asyncio.sleep(interval)
 
 
