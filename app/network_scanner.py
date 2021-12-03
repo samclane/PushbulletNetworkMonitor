@@ -1,10 +1,12 @@
 from __future__ import annotations
-from _typeshed import NoneType
 import asyncio
 import subprocess
 import logging
 from abc import ABC, abstractmethod
 from typing import Callable, List, Optional, Type
+import scapy.all as scapy
+import socket
+import warnings
 
 logger = logging.getLogger('network_scanner')
 logger.setLevel(logging.INFO)
@@ -60,6 +62,40 @@ class HostnameScanStrategy(IpScanStrategy):
         tasks = [asyncio.create_task(self.interface.ping(self.prefix + str(i), get_hostname=True)) for i in range(255)]
         ping_output = await asyncio.gather(*tasks)
         return any(self.hostname in x for x in ping_output)
+
+class ScapyScanStragetgy(ScanStrategy):
+    """
+    Slow as hell- probably don't use this yet
+    """
+    def __init__(self, interface, router_ip='192.168.0.1', hostname: Optional[str] = None):
+        warnings.warn("ScapyScanStragetgy is slow and probably not used", DeprecationWarning)
+        super().__init__(interface)
+        self.interface = interface
+        self.available_networks = []
+        self.request = scapy.ARP()
+        self.broadcast = scapy.Ether()
+        self.broadcast.dst = 'ff:ff:ff:ff:ff:ff'
+        self.router_ip = router_ip
+        self.hostname = hostname or self.interface.hostname
+
+    async def scan(self, net_area):
+        await self.IP_Scan(net_area, 24)
+
+    async def IP_Scan(self, net_area, net_mask):
+        self.available_networks.clear()
+        self.request.pdst = f'{net_area}/{net_mask}'
+        request_broadcast = self.broadcast / self.request
+        clients = scapy.srp(request_broadcast, timeout=5)[0]
+        for _, received_ip in clients:
+            try:
+                name = socket.gethostbyaddr(received_ip.psrc)[0]
+            except Exception:
+                continue
+            self.available_networks.append({'IP': received_ip.psrc, 'MAC': received_ip.hwsrc, 'Name': name})
+
+    async def on_network(self):
+        await self.scan(self.router_ip)
+        return self.hostname in [x['Name'] for x in self.available_networks]
 
 
 class NetworkScanner:
