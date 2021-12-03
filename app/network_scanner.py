@@ -167,4 +167,7 @@ if __name__ == "__main__":
     ns = NetworkScanner(ip='192.168.0.x', hostname='DIETPI', strategy=HostnameScanStrategy)
     async def report(ip=None, mac=None, hostname=None):
         logger.info(f"cb: {ip} {mac} {hostname}")
-    logger.info(asyncio.run(ns.monitor(cb=report)))
+    try:
+        logger.info(asyncio.run(ns.monitor(cb=report)))
+    finally:
+        exit(0)
